@@ -30,12 +30,13 @@ CREATE TABLE IF NOT EXISTS hft_dashboard.market_ohlc
     PARTITION BY toYYYYMM(candle_time)
     TTL toDateTime(candle_time) + INTERVAL 90 DAY DELETE;
 
--- Create inserter_user with permission to write to both tables
 CREATE USER IF NOT EXISTS inserter_user
     IDENTIFIED WITH plaintext_password BY 'inserter_pass';
 
 GRANT INSERT ON hft_dashboard.historical_trades TO inserter_user;
 GRANT INSERT ON hft_dashboard.market_ohlc TO inserter_user;
+GRANT INSERT ON hft_dashboard.market_ohlc TO inserter_user;
+GRANT SELECT ON hft_dashboard.market_ohlc TO inserter_user;
+GRANT SELECT ON hft_dashboard.historical_trades TO inserter_user;
 
--- Also grant SELECT so the Rust app can read back for the OHLCV endpoint
 GRANT SELECT ON hft_dashboard.* TO inserter_user;
