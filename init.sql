@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS hft_dashboard.market_ohlc
     high        Decimal64(8)  CODEC(ZSTD(3)),
     low         Decimal64(8)  CODEC(ZSTD(3)),
     close       Decimal64(8)  CODEC(ZSTD(3)),
-    volume      Decimal64(8)  CODEC(ZSTD(3))
+    volume      Decimal64(8)  CODEC(ZSTD(3)),
+    change_1h   Decimal64(8)  CODEC(ZSTD(3)),  -- % change vs price 1 hour ago
+    change_24h  Decimal64(8)  CODEC(ZSTD(3))   -- % change vs price 24 hours ago
     )
     ENGINE = ReplacingMergeTree()
     ORDER BY (symbol, candle_time)
@@ -34,7 +36,6 @@ CREATE USER IF NOT EXISTS inserter_user
     IDENTIFIED WITH plaintext_password BY 'inserter_pass';
 
 GRANT INSERT ON hft_dashboard.historical_trades TO inserter_user;
-GRANT INSERT ON hft_dashboard.market_ohlc TO inserter_user;
 GRANT INSERT ON hft_dashboard.market_ohlc TO inserter_user;
 GRANT SELECT ON hft_dashboard.market_ohlc TO inserter_user;
 GRANT SELECT ON hft_dashboard.historical_trades TO inserter_user;
@@ -60,21 +61,28 @@ CREATE TABLE IF NOT EXISTS exchange.users
 ENGINE = ReplacingMergeTree(created_at)
 ORDER BY id;
 
-CREATE TABLE IF NOT EXISTS exchange.orders
+-- Drop and recreate to switch engine to ReplacingMergeTree(updated_at) and add
+-- limit_price / updated_at columns. Existing dev instances: docker-compose down -v && up -d
+DROP TABLE IF EXISTS exchange.orders;
+CREATE TABLE exchange.orders
 (
     id            String          CODEC(ZSTD(3)),
     user_id       String          CODEC(ZSTD(3)),
-    symbol        String          CODEC(ZSTD(3)),  -- 'SOL/USDC' | 'BTC/USDC'
+    symbol        String          CODEC(ZSTD(3)),
     side          String,                           -- 'buy' | 'sell'
+    order_type    String,                           -- 'market' | 'limit'
     price         String          CODEC(ZSTD(3)),
     amount        String          CODEC(ZSTD(3)),
     total_usdc    String          CODEC(ZSTD(3)),
-    status        String,                           -- 'filled' | 'rejected'
-    reject_reason String          CODEC(ZSTD(3)),  -- empty string when null
-    created_at    DateTime64(6)   CODEC(DoubleDelta, ZSTD(1))
+    limit_price   String          CODEC(ZSTD(3)),  -- empty for market orders
+    status        String,                           -- 'filled' | 'rejected' | 'pending' | 'canceled'
+    reject_reason String          CODEC(ZSTD(3)),
+    realized_pnl  String          CODEC(ZSTD(3)),  -- empty for buys/rejected/pending
+    created_at    DateTime64(6)   CODEC(DoubleDelta, ZSTD(1)),
+    updated_at    DateTime64(6)   CODEC(DoubleDelta, ZSTD(1))  -- version col
 )
-ENGINE = MergeTree()
-ORDER BY (user_id, created_at)
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY (user_id, id)
 PARTITION BY toYYYYMM(created_at);
 
 CREATE TABLE IF NOT EXISTS exchange.positions
